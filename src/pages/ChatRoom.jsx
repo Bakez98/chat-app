@@ -1,30 +1,26 @@
 import React, { useEffect, useState, useRef } from "react";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  addDoc,
-  serverTimestamp,
-  setDoc,
-  doc,
-  deleteDoc,
-} from "firebase/firestore";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
-
 import { auth, db } from "../firebase";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc } from "firebase/firestore";
 import { format } from "date-fns";
+
+// Import Components
+import Header from "../components/chat/Header";
+import MessageList from "../components/chat/MessageList";
+import MessageInput from "../components/chat/MessageInput";
+import TypingIndicator from "../components/chat/TypingIndicator";
+import EmojiPicker from "emoji-picker-react";
 
 function ChatRoom() {
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
   const [typingUsers, setTypingUsers] = useState([]);
   const [user, setUser] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const dummyRef = useRef();
   const navigate = useNavigate();
 
-  // Handle user auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
@@ -37,12 +33,10 @@ function ChatRoom() {
     return () => unsubscribe();
   }, [navigate]);
 
-  // Load messages only when user is authenticated
   useEffect(() => {
-    if (!user) return; // Prevent running if user not ready
+    if (!user) return;
 
     const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
-
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const msgs = [];
       querySnapshot.forEach((doc) => {
@@ -55,7 +49,6 @@ function ChatRoom() {
     return () => unsubscribe();
   }, [user]);
 
-  // Typing indicator listener
   useEffect(() => {
     if (!user) return;
 
@@ -70,7 +63,6 @@ function ChatRoom() {
     return () => unsubscribe();
   }, [user]);
 
-  // Cleanup typing status on unmount
   useEffect(() => {
     if (!user) return;
 
@@ -85,7 +77,20 @@ function ChatRoom() {
     };
   }, [user]);
 
-  // Handle typing input
+  const handleImageUpload = (imageUrl) => {
+  const messageData = {
+    text: "",
+    imageUrl,
+    createdAt: serverTimestamp(),
+    uid: user.uid,
+    displayName: user.displayName,
+    photoURL: user.photoURL,
+  };
+
+  const messagesRef = collection(db, "messages");
+  addDoc(messagesRef, messageData);
+};
+
   const handleTyping = async (text) => {
     setMessage(text);
 
@@ -99,7 +104,6 @@ function ChatRoom() {
     }
   };
 
-  // Handle message send
   const handleSend = async (e) => {
     e.preventDefault();
 
@@ -117,7 +121,6 @@ function ChatRoom() {
     dummyRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Handle logout
   const handleLogout = async () => {
     await signOut(auth);
     navigate("/login");
@@ -125,143 +128,17 @@ function ChatRoom() {
 
   return (
     <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px",
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Welcome, {user?.email || "User"}</h2>
-        <button
-          onClick={handleLogout}
-          style={{
-            padding: "8px 16px",
-            backgroundColor: "#f44336",
-            color: "#fff",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-          }}
-        >
-          Logout
-        </button>
-      </div>
+      <Header user={user} handleLogout={handleLogout} />
+      <MessageList messages={messages} user={user} />
+      <TypingIndicator typingUsers={typingUsers} />
+      <MessageInput
+  message={message}
+  setMessage={setMessage}
+  handleSend={handleSend}
+  handleTyping={handleTyping} // ✅ THIS LINE MUST EXIST
+/>
 
-      <div
-        style={{
-          height: "400px",
-          overflowY: "scroll",
-          border: "1px solid #ccc",
-          borderRadius: "10px",
-          padding: "10px",
-          marginBottom: "20px",
-          backgroundColor: "#fafafa",
-        }}
-      >
-        {messages.map((msg) => {
-          const time = msg.createdAt?.toDate
-            ? format(msg.createdAt.toDate(), "p")
-            : "";
 
-          return (
-            <div
-              key={msg.id}
-              style={{
-                display: "flex",
-                justifyContent:
-                  msg.uid === user?.uid ? "flex-end" : "flex-start",
-                marginBottom: "10px",
-              }}
-            >
-              <div
-                style={{
-                  background: msg.uid === user?.uid ? "#dcf8c6" : "#f1f1f1",
-                  padding: "10px",
-                  borderRadius: "15px",
-                  maxWidth: "60%",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    marginBottom: "5px",
-                  }}
-                >
-                  <img
-                    src={
-                      user?.photoURL ||
-                      "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&s=200"
-                    }
-                    alt="User Avatar"
-                    style={{
-                      width: "30px",
-                      height: "30px",
-                      borderRadius: "50%",
-                      marginRight: "10px",
-                    }}
-                  />
-                  <span style={{ fontSize: "0.8rem", color: "#888" }}>
-                    {msg.email}
-                  </span>
-                </div>
-                <div>{msg.text}</div>
-                {time && (
-                  <div
-                    style={{
-                      fontSize: "0.75rem",
-                      textAlign: "right",
-                      marginTop: "4px",
-                      color: "#666",
-                    }}
-                  >
-                    {time}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        <div ref={dummyRef} />
-      </div>
-
-      {/* Typing Indicator */}
-      {typingUsers.length > 0 && (
-        <p style={{ fontStyle: "italic", color: "#666", marginBottom: "10px" }}>
-          {typingUsers.join(", ")} {typingUsers.length > 1 ? "are" : "is"} typing...
-        </p>
-      )}
-
-      <form onSubmit={handleSend} style={{ display: "flex" }}>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => handleTyping(e.target.value)}
-          placeholder="Type a message..."
-          style={{
-            flex: 1,
-            padding: "10px",
-            borderRadius: "5px",
-            border: "1px solid #ccc",
-          }}
-        />
-        <button
-          type="submit"
-          style={{
-            marginLeft: "10px",
-            padding: "10px 20px",
-            backgroundColor: "#4CAF50",
-            color: "#fff",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-          }}
-        >
-          Send
-        </button>
-      </form>
     </div>
   );
 }
